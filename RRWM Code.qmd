@@ -1,0 +1,250 @@
+---
+title: "Cand3"
+format: html
+editor: visual
+---
+
+##Clear environment
+```{r}
+rm(list = ls())
+```
+
+##load packages
+```{r}
+library(tidyverse)
+library(haven)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(kableExtra)
+library(dplyr)
+```
+
+##Load in Data
+```{r}
+library(readr)
+gss_12M0025_E_2017_c_31_F1 <- read_csv("gss-12M0025-E-2017-c-31_F1.csv")
+```
+
+Rename data 
+```{r}
+gss2017<-gss_12M0025_E_2017_c_31_F1
+```
+
+
+##Dependent variable:
+
+  SRH_115 — Self-rated mental health 
+  
+```{r}
+library(dplyr)
+
+gss2017 <- gss2017 %>%
+  mutate(
+    mental_health = case_when(
+      SRH_115 == 1 ~ "Excellent",
+      SRH_115 == 2 ~ "Very good",
+      SRH_115 == 3 ~ "Good",
+      SRH_115 == 4 ~ "Fair",
+      SRH_115 == 5 ~ "Poor",
+      TRUE ~ NA_character_   # removes don't know, refusal, etc.
+    ),
+    mental_health = factor(
+      mental_health,
+      levels = c("Excellent", "Very good", "Good", "Fair", "Poor"),
+      ordered = TRUE
+    )
+  )
+
+
+```
+  
+
+##Predictor variables:
+
+  AGEGR10 — Age group 
+```{r}
+library(dplyr)
+
+gss2017 <- gss2017 %>%
+  mutate(
+    age_group = case_when(
+      AGEGR10 == 1 ~ "15 to 24 years",
+      AGEGR10 == 2 ~ "25 to 34 years",
+      AGEGR10 == 3 ~ "35 to 44 years",
+      AGEGR10 == 4 ~ "45 to 54 years",
+      AGEGR10 == 5 ~ "55 to 64 years",
+      AGEGR10 == 6 ~ "65 to 74 years",
+      AGEGR10 == 7 ~ "75 years and over",
+      TRUE ~ NA_character_  # drops 96, 97, 98, 99 (valid skip, refusal, etc.)
+    ),
+    age_group = factor(
+      age_group,
+      levels = c(
+        "15 to 24 years",
+        "25 to 34 years",
+        "35 to 44 years",
+        "45 to 54 years",
+        "55 to 64 years",
+        "65 to 74 years",
+        "75 years and over"
+      ),
+      ordered = TRUE
+    )
+  )
+
+```
+
+  SEX — Sex of respondent
+```{r}
+
+library(dplyr)
+
+gss2017 <- gss2017 %>%
+  mutate(
+    sex = case_when(
+      SEX == 1 ~ "Male",
+      SEX == 2 ~ "Female",
+      TRUE ~ NA_character_   # drops refusal, valid skip, etc.
+    ),
+    sex = factor(sex, levels = c("Male", "Female"))
+  )
+
+
+```
+
+  MARSTAT — Marital status
+```{r}
+library(dplyr)
+
+gss2017 <- gss2017 %>%
+  mutate(
+    marital_status = case_when(
+      MARSTAT == 1 ~ "Married",
+      MARSTAT == 2 ~ "Living common-law",
+      MARSTAT == 3 ~ "Widowed",
+      MARSTAT == 4 ~ "Separated",
+      MARSTAT == 5 ~ "Divorced",
+      MARSTAT == 6 ~ "Single, never married",
+      TRUE ~ NA_character_  # drops 96–99
+    ),
+    marital_status = factor(
+      marital_status,
+      levels = c(
+        "Married",
+        "Living common-law",
+        "Widowed",
+        "Separated",
+        "Divorced",
+        "Single, never married"
+      )
+    )
+  )
+
+```
+  
+
+  FAMINCG2 — Total family income before tax
+```{r}
+library(dplyr)
+
+gss2017 <- gss2017 %>%
+  mutate(
+    family_income = case_when(
+      FAMINCG2 == 1 ~ "Less than $25,000",
+      FAMINCG2 == 2 ~ "$25,000 to $49,999",
+      FAMINCG2 == 3 ~ "$50,000 to $74,999",
+      FAMINCG2 == 4 ~ "$75,000 to $99,999",
+      FAMINCG2 == 5 ~ "$100,000 to $124,999",
+      FAMINCG2 == 6 ~ "$125,000 and more",
+      TRUE ~ NA_character_   # drops 96–99
+    ),
+    family_income = factor(
+      family_income,
+      levels = c(
+        "Less than $25,000",
+        "$25,000 to $49,999",
+        "$50,000 to $74,999",
+        "$75,000 to $99,999",
+        "$100,000 to $124,999",
+        "$125,000 and more"
+      ),
+      ordered = TRUE
+    )
+  )
+
+```
+  
+Make mental health numeric for regression
+```{r}
+gss2017 <- gss2017 %>%
+  mutate(mental_health_num = as.numeric(mental_health))
+```  
+  
+## Weight the data
+```{r}
+# --- Load packages ---
+library(dplyr)
+library(survey)
+library(ggplot2)
+library(srvyr)
+
+# --- Define survey design using person-level weight ---
+gss2017_svy <- gss2017 %>%
+  filter(!is.na(mental_health)) %>%
+  as_survey_design(weights = WGHT_PER)
+
+
+```
+
+## Weighted descriptive table
+```{r}
+library(kableExtra)
+library(scales)
+
+# Helper function: convert svytable() to clean tibble with consistent column names
+svy_to_df <- function(var, label) {
+  svytable(var, gss2017_svy) %>%
+    prop.table() %>%
+    as.data.frame() %>%
+    rename(Category = 1, Proportion = 2) %>%   # renames first two columns no matter what they’re called
+    mutate(
+      Proportion = percent(Proportion, accuracy = 0.1),
+      Variable = label
+    )
+}
+
+# Combine all weighted variables
+descriptives <- bind_rows(
+  svy_to_df(~mental_health, "Self-rated mental health"),
+  svy_to_df(~sex, "Sex"),
+  svy_to_df(~age_group, "Age group"),
+  svy_to_df(~marital_status, "Marital status"),
+  svy_to_df(~family_income, "Family income")
+)
+
+# Display formatted table
+kbl(
+  descriptives,
+  caption = "Table 1. Weighted Descriptive Statistics for Key Variables (GSS 2017)",
+  col.names = c("Category", "Weighted %", "Variable"),
+  align = "lcc",
+  booktabs = TRUE
+) %>%
+  kable_styling(full_width = FALSE, position = "center")
+
+```
+
+##Regression Analysis
+
+```{r}
+model_lm <- svyglm(
+  mental_health_num ~ sex + age_group + marital_status + family_income,
+  design = gss2017_svy
+)
+
+summary(model_lm)
+
+```
+
+
